@@ -137,8 +137,8 @@ if __name__ == '__main__':
     ])
 
     # Build!
-    data = str(pkt)
-    pkt = scapy_all.Ether(data)
+    # data = str(pkt)
+    # pkt = scapy_all.Ether(data)
     pkt.show()
 
     # Test the value of some fields
