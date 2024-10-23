@@ -119,7 +119,6 @@ if __name__ == '__main__':
     pkt.show()
 
     # Test the value of some fields
-    print(len(pkt[ENIP_UDP].items))
     assert pkt[ENIP_UDP].count == 2 #Fixed
     assert pkt[ENIP_UDP].items[0].type_id == 0x8002
     # assert pkt[ENIP_UDP].items[0].length == 8 #FIXME: Not working
