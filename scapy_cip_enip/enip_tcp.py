@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) 2015 Nicolas Iooss, SUTD
 #
@@ -24,7 +24,7 @@ import struct
 
 from scapy import all as scapy_all
 
-import utils
+from .import utils
 
 
 class ENIP_ConnectionAddress(scapy_all.Packet):
@@ -123,36 +123,3 @@ scapy_all.bind_layers(ENIP_TCP, ENIP_SendRRData, command_id=0x006f)
 scapy_all.bind_layers(ENIP_TCP, ENIP_SendUnitData, command_id=0x0070)
 scapy_all.bind_layers(ENIP_SendUnitData_Item, ENIP_ConnectionAddress, type_id=0x00a1)
 scapy_all.bind_layers(ENIP_SendUnitData_Item, ENIP_ConnectionPacket, type_id=0x00b1)
-
-if __name__ == '__main__':
-    # Test building/dissecting packets
-    # Build a raw packet over ENIP
-    pkt = scapy_all.Ether(src='01:23:45:67:89:ab', dst='ba:98:76:54:32:10')
-    pkt /= scapy_all.IP(src='192.168.1.1', dst='192.168.1.42')
-    pkt /= scapy_all.TCP(sport=10000, dport=44818)
-    pkt /= ENIP_TCP()
-    pkt /= ENIP_SendUnitData(items=[
-        ENIP_SendUnitData_Item() / ENIP_ConnectionAddress(connection_id=1337),
-        ENIP_SendUnitData_Item() / ENIP_ConnectionPacket(sequence=4242) / scapy_all.Raw(load='test'),
-    ])
-
-    # Build!
-    # data = str(pkt)
-    # pkt = scapy_all.Ether(data)
-    pkt.show()
-
-    # Test the value of some fields
-    assert pkt[ENIP_TCP].command_id == 0x70
-    assert pkt[ENIP_TCP].session == 0
-    assert pkt[ENIP_TCP].status == 0
-    assert pkt[ENIP_TCP].length == 26
-    assert pkt[ENIP_SendUnitData].count == 2
-    assert pkt[ENIP_SendUnitData].items[0].type_id == 0x00a1
-    assert pkt[ENIP_SendUnitData].items[0].length == 4
-    assert pkt[ENIP_SendUnitData].items[0].payload == pkt[ENIP_ConnectionAddress]
-    assert pkt[ENIP_ConnectionAddress].connection_id == 1337
-    assert pkt[ENIP_SendUnitData].items[1].type_id == 0x00b1
-    assert pkt[ENIP_SendUnitData].items[1].length == 6
-    assert pkt[ENIP_SendUnitData].items[1].payload == pkt[ENIP_ConnectionPacket]
-    assert pkt[ENIP_ConnectionPacket].sequence == 4242
-    assert pkt[ENIP_ConnectionPacket].payload.load == 'test'

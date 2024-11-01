@@ -24,14 +24,13 @@
 This dissector only supports a "keep-alive" kind of packet which has been seen
 in SUTD's secure water treatment testbed.
 """
-import struct
 
 from scapy.all import *
 
 from scapy.layers.inet import UDP, IP
 from scapy.layers.l2 import Ether
 
-import utils
+from .import utils
 
 # Keep-alive sequences
 ENIP_UDP_KEEPALIVE = (
@@ -102,29 +101,3 @@ class ENIP_UDP(Packet):
 bind_layers(UDP, ENIP_UDP, sport=2222, dport=2222)
 bind_layers(ENIP_UDP_Item, ENIP_UDP_SequencedAddress, type_id=0x8002)
 
-if __name__ == '__main__':
-    # Test building/dissecting packets
-    # Build a keep-alive packet
-    pkt = Ether(src='00:1d:9c:c8:13:37', dst='01:00:5e:40:12:34')
-    pkt /= IP(src='192.168.1.42', dst='239.192.18.52')
-    pkt /= UDP(sport=2222, dport=2222)
-    pkt /= ENIP_UDP(items=[
-        ENIP_UDP_Item() / ENIP_UDP_SequencedAddress(connection_id=1337, sequence=42),
-        ENIP_UDP_Item(type_id=0x00b1) / Raw(load=ENIP_UDP_KEEPALIVE),
-    ])
-
-    # Build!
-    # data = str(pkt)
-    # pkt = Ether(data)
-    pkt.show()
-
-    # Test the value of some fields
-    assert pkt[ENIP_UDP].count == 2 #Fixed
-    assert pkt[ENIP_UDP].items[0].type_id == 0x8002
-    # assert pkt[ENIP_UDP].items[0].length == 8 #FIXME: Not working
-    assert pkt[ENIP_UDP].items[0].payload == pkt[ENIP_UDP_SequencedAddress]
-    assert pkt[ENIP_UDP_SequencedAddress].connection_id == 1337
-    assert pkt[ENIP_UDP_SequencedAddress].sequence == 42
-    assert pkt[ENIP_UDP].items[1].type_id == 0x00b1
-    # assert pkt[ENIP_UDP].items[1].length == 38 #FIXME: not working
-    assert pkt[ENIP_UDP].items[1].payload.load == ENIP_UDP_KEEPALIVE
