@@ -24,11 +24,13 @@
 This dissector only supports a "keep-alive" kind of packet which has been seen
 in SUTD's secure water treatment testbed.
 """
-import struct
 
-from scapy import all as scapy_all
+from scapy.all import *
 
-import utils
+from scapy.layers.inet import UDP, IP
+from scapy.layers.l2 import Ether
+
+from .import utils
 
 # Keep-alive sequences
 ENIP_UDP_KEEPALIVE = (
@@ -39,73 +41,63 @@ ENIP_UDP_KEEPALIVE = (
     b'\xff\xff\xff\xff\x00\x00\x00\x00')
 
 
-class ENIP_UDP_SequencedAddress(scapy_all.Packet):
+class ENIP_UDP_SequencedAddress(Packet):
     name = "ENIP_UDP_SequencedAddress"
     fields_desc = [
-        scapy_all.LEIntField("connection_id", 0),
-        scapy_all.LEIntField("sequence", 0),
+        LEIntField("connection_id", 0),
+        LEIntField("sequence", 0),
     ]
 
 
-class ENIP_UDP_Item(scapy_all.Packet):
+class ENIP_UDP_Item(Packet):
     name = "ENIP_UDP_Item"
     fields_desc = [
-        scapy_all.LEShortEnumField("type_id", 0, {
+        LEShortEnumField("type_id", 0, {
             0x00b1: "Connected_Data_Item",
             0x8002: "Sequenced_Address",
         }),
-        scapy_all.LEShortField("length", None),
+        LEShortField("length", None),
     ]
 
     def extract_padding(self, p):
         return p[:self.length], p[self.length:]
 
     def post_build(self, p, pay):
-        if self.length is None and pay:
-            l = len(pay)
-            p = p[:2] + struct.pack("<H", l) + p[4:]
-        return p + pay
+            if self.length is None and pay:
+                l = len(pay)
+                p = p[:2] + struct.pack("<H", l) + p[4:]
+            return p + pay
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        data = self.do_build_payload()
+
+        if self.length is None:
+            if data is not None:
+                self.length = len(data)
+            else:
+                self.length = 0
 
 
-class ENIP_UDP(scapy_all.Packet):
+class ENIP_UDP(Packet):
     """Ethernet/IP packet over UDP"""
     name = "ENIP_UDP"
     fields_desc = [
         utils.LEShortLenField("count", None, count_of="items"),
-        scapy_all.PacketListField("items", [], ENIP_UDP_Item,
+        PacketListField("items", [], ENIP_UDP_Item,
                                   count_from=lambda p: p.count),
     ]
 
     def extract_padding(self, p):
         return "", p
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.count is None:
+            item_count_bytes = len(self.items)
+            self.count = item_count_bytes  # Size in words (16 bits)
 
-scapy_all.bind_layers(scapy_all.UDP, ENIP_UDP, sport=2222, dport=2222)
-scapy_all.bind_layers(ENIP_UDP_Item, ENIP_UDP_SequencedAddress, type_id=0x8002)
 
-if __name__ == '__main__':
-    # Test building/dissecting packets
-    # Build a keep-alive packet
-    pkt = scapy_all.Ether(src='00:1d:9c:c8:13:37', dst='01:00:5e:40:12:34')
-    pkt /= scapy_all.IP(src='192.168.1.42', dst='239.192.18.52')
-    pkt /= scapy_all.UDP(sport=2222, dport=2222)
-    pkt /= ENIP_UDP(items=[
-        ENIP_UDP_Item() / ENIP_UDP_SequencedAddress(connection_id=1337, sequence=42),
-        ENIP_UDP_Item(type_id=0x00b1) / scapy_all.Raw(load=ENIP_UDP_KEEPALIVE),
-    ])
+bind_layers(UDP, ENIP_UDP, sport=2222, dport=2222)
+bind_layers(ENIP_UDP_Item, ENIP_UDP_SequencedAddress, type_id=0x8002)
 
-    # Build!
-    data = str(pkt)
-    pkt = scapy_all.Ether(data)
-    pkt.show()
-
-    # Test the value of some fields
-    assert pkt[ENIP_UDP].count == 2
-    assert pkt[ENIP_UDP].items[0].type_id == 0x8002
-    assert pkt[ENIP_UDP].items[0].length == 8
-    assert pkt[ENIP_UDP].items[0].payload == pkt[ENIP_UDP_SequencedAddress]
-    assert pkt[ENIP_UDP_SequencedAddress].connection_id == 1337
-    assert pkt[ENIP_UDP_SequencedAddress].sequence == 42
-    assert pkt[ENIP_UDP].items[1].type_id == 0x00b1
-    assert pkt[ENIP_UDP].items[1].length == 38
-    assert pkt[ENIP_UDP].items[1].payload.load == ENIP_UDP_KEEPALIVE

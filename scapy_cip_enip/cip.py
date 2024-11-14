@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) 2015 Nicolas Iooss, SUTD; David I. Urbina, UTD
 #
@@ -32,8 +32,8 @@ import sys
 
 from scapy import all as scapy_all
 
-import enip_tcp
-import utils
+from .import enip_tcp
+from .import utils
 
 
 class CIP_RespSingleAttribute(scapy_all.Packet):

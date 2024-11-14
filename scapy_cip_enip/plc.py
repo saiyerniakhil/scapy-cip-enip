@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright (c) 2015 Nicolas Iooss, SUTD
 #
@@ -26,10 +26,10 @@ import struct
 
 from scapy import all as scapy_all
 
-from cip import CIP, CIP_Path, CIP_ReqConnectionManager, \
+from .cip import CIP, CIP_Path, CIP_ReqConnectionManager, \
     CIP_MultipleServicePacket, CIP_ReqForwardOpen, CIP_RespForwardOpen, \
     CIP_ReqForwardClose, CIP_ReqGetAttributeList, CIP_ReqReadOtherTag
-from enip_tcp import ENIP_TCP, ENIP_SendUnitData, ENIP_SendUnitData_Item, \
+from .enip_tcp import ENIP_TCP, ENIP_SendUnitData, ENIP_SendUnitData_Item, \
     ENIP_ConnectionAddress, ENIP_ConnectionPacket, ENIP_RegisterSession, ENIP_SendRRData
 
 # Global switch to make it easy to test without sending anything

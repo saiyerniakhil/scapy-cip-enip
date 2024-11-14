@@ -14,7 +14,7 @@ Therefore, it mostly implements a subset of CIP specification, which is used in 
 Requirements
 ============
 
-* Python 2.7
+* Python 3.12.3
 * Scapy (http://www.secdev.org/projects/scapy/)
 
 
