@@ -25,7 +25,7 @@ import socket
 import struct
 
 from scapy import all as scapy_all
-
+from scapy.compat import raw
 from .cip import CIP, CIP_Path, CIP_ReqConnectionManager, \
     CIP_MultipleServicePacket, CIP_ReqForwardOpen, CIP_RespForwardOpen, \
     CIP_ReqForwardClose, CIP_ReqGetAttributeList, CIP_ReqReadOtherTag
@@ -58,7 +58,7 @@ class PLCClient(object):
         # Open an Ethernet/IP session
         sessionpkt = ENIP_TCP() / ENIP_RegisterSession()
         if self.sock is not None:
-            self.sock.send(str(sessionpkt))
+            self.sock.send(raw(sessionpkt))
             reply_pkt = self.recv_enippkt()
             self.session_id = reply_pkt.session
 
@@ -74,7 +74,7 @@ class PLCClient(object):
             ENIP_SendUnitData_Item() / cippkt
         ])
         if self.sock is not None:
-            self.sock.send(str(enippkt))
+            self.sock.send(raw(enippkt))
 
     def send_rr_cm_cip(self, cippkt):
         """Encapsulate the CIP packet into a ConnectionManager packet"""
@@ -99,7 +99,7 @@ class PLCClient(object):
         ])
         self.sequence += 1
         if self.sock is not None:
-            self.sock.send(str(enippkt))
+            self.sock.send(raw(enippkt))
 
     def recv_enippkt(self):
         """Receive an ENIP packet from the TCP socket"""
