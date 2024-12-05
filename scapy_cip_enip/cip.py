@@ -156,26 +156,26 @@ class CIP_PathField(scapy_all.StrLenField):
     @classmethod
     def to_tuplelist(cls, val):
         """Return a list of tuples describing the content of the path encoded in val"""
-        if ord(val[0]) == 0x91:
+        if val[0] == 0x91:
             # "ANSI Extended Symbolic", the path is a string
             # Don't check the second byte, which is the length (in bytes) of the strings.
-            return {-1: val[2:].rstrip("\0")}
+            return {-1: val[2:].rstrip(b"\0")}
 
         pos = 0
         result = []
         while pos < len(val):
-            header = struct.unpack('B', val[pos])[0]
+            header = val[pos]
             pos += 1
             if (header & 0xe0) != 0x20:  # 001 high bits is "Logical Segment"
                 sys.stderr.write("WARN: unknown segment class of 0x{:02x}\n".format(header))
 
             seg_format = header & 3
             if seg_format == 0:  # 8-bit segment
-                seg_value = struct.unpack('B', val[pos])[0]
+                seg_value = val[pos]
                 pos += 1
             elif seg_format == 1:  # 16-bit segment
-                seg_value = struct.unpack('<H', val[pos + 1:pos + 3])[0]
-                pos += 3
+                seg_value = struct.unpack('<H', val[pos:pos + 2])[0]
+                pos += 2
             else:
                 # 2 is 32-bit segment, but alignment needs to be taken into account
                 raise Exception("Unknown seg_format {}".format(seg_format))
@@ -183,27 +183,6 @@ class CIP_PathField(scapy_all.StrLenField):
             seg_type = (header >> 2) & 7
             result.append((seg_type, seg_value))
         return result
-
-    @classmethod
-    def tuplelist2repr(cls, val_tuplelist):
-        """Represent a path tuplelist into a human-readable text"""
-        if -1 in val_tuplelist and list(val_tuplelist.keys()) == [-1]:
-            # String path
-            return repr(val_tuplelist[-1])
-
-        descriptions = []
-        for type_id, value in val_tuplelist:
-            desc = cls.SEGMENT_TYPES.get(type_id, "type{}".format(type_id))
-            desc += " 0x{:x}".format(value)
-            if type_id == 0 and value in cls.KNOWN_CLASSES:
-                desc += "({})".format(cls.KNOWN_CLASSES[value])
-            descriptions.append(desc)
-        return ",".join(descriptions)
-
-    @classmethod
-    def i2repr(cls, pkt, val):
-        """Decode the path "val" as human-readable text"""
-        return cls.tuplelist2repr(cls.to_tuplelist(val))
 
 
 class CIP_Path(scapy_all.Packet):
