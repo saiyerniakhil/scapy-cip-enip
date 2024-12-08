@@ -358,14 +358,12 @@ class CIP(scapy_all.Packet):
     def post_build(self, p, pay):
         is_response = (self.direction == 1)
         if self.direction is None and not self.path:
-            # Transform the packet into a response
-            p = "\x01" + p[1:]
+            p = b"\x01" + p[1:]  # Use byte literal
             is_response = True
 
         if is_response:
-            # Add a success status field if there was none
             if not self.status:
-                p = p[0:1] + b"\0\0\0" + p[1:]
+                p = p[0:1] + b"\0\0\0" + p[1:]  # Ensure bytes
         return p + pay
 
 
@@ -430,6 +428,18 @@ class CIP_ConnectionParam(scapy_all.Packet):
     def extract_padding(self, s):
         return '', s
 
+def compute_connection_param(owner=0, connection_type=2, priority=0,
+                             connection_size_type=0, connection_size=500):
+    value = (
+        ((owner & 0x1) << 15) |
+        ((connection_type & 0x3) << 13) |
+        ((0 & 0x1) << 12) |  # Reserved bit
+        ((priority & 0x3) << 10) |
+        ((connection_size_type & 0x1) << 9) |
+        (connection_size & 0x1FF)
+    )
+    return value
+
 
 class CIP_ReqForwardOpen(scapy_all.Packet):
     """Forward Open request"""
@@ -446,14 +456,25 @@ class CIP_ReqForwardOpen(scapy_all.Packet):
         scapy_all.ByteField("connection_timeout_multiplier", 0),
         scapy_all.X3BytesField("reserved", 0),
         scapy_all.LEIntField("OT_rpi", 0x007a1200),  # 8000 ms
-        scapy_all.PacketField('OT_connection_param', CIP_ConnectionParam(), CIP_ConnectionParam),
+        scapy_all.LEShortField("OT_connection_param", None),
         scapy_all.LEIntField("TO_rpi", 0x007a1200),
-        scapy_all.PacketField('TO_connection_param', CIP_ConnectionParam(), CIP_ConnectionParam),
+        scapy_all.LEShortField("TO_connection_param", None),
         scapy_all.XByteField("transport_type", 0xa3),  # direction server, application object, class 3
         scapy_all.ByteField("path_wordsize", None),
         CIP_PathField("path", None, length_from=lambda p: 2 * p.path_wordsize),
     ]
 
+    def pre_dissect(self, s):
+        return s
+
+    def post_build(self, p, pay):
+        if self.OT_connection_param is None:
+            self.OT_connection_param = compute_connection_param()
+            p = p[:32] + struct.pack('<H', self.OT_connection_param) + p[34:]
+        if self.TO_connection_param is None:
+            self.TO_connection_param = compute_connection_param()
+            p = p[:38] + struct.pack('<H', self.TO_connection_param) + p[40:]
+        return p + pay
 
 class CIP_RespForwardOpen(scapy_all.Packet):
     """Forward Open response"""
@@ -500,14 +521,14 @@ class CIP_MultipleServicePacket(scapy_all.Packet):
     def do_build(self):
         """Build the packet by concatenating packets and building the offsets list"""
         # Build the sub packets
-        subpkts = [str(pkt) for pkt in self.packets]
+        subpkts = [bytes(pkt) for pkt in self.packets]  # Use bytes(pkt)
         # Build the offset lists
         current_offset = 2 + 2 * len(subpkts)
         offsets = []
         for p in subpkts:
             offsets.append(struct.pack("<H", current_offset))
             current_offset += len(p)
-        return struct.pack("<H", len(subpkts)) + "".join(offsets) + "".join(subpkts)
+        return struct.pack("<H", len(subpkts)) + b"".join(offsets) + b"".join(subpkts)
 
 
 class CIP_ReqConnectionManager(scapy_all.Packet):

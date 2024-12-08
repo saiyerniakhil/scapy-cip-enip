@@ -42,25 +42,35 @@ class PLCClient(object):
     """Handle all the state of an Ethernet/IP session with a PLC"""
 
     def __init__(self, plc_addr, plc_port=44818):
+        self.plc_addr = plc_addr
+        self.plc_port = plc_port
         if not NO_NETWORK:
             try:
-                self.sock = socket.create_connection((plc_addr, plc_port))
+               self.sock = socket.create_connection((plc_addr, plc_port))
+               self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+               self.udp_socket.connect((self.plc_addr, 2222))  # default UDP port
             except socket.error as exc:
                 logger.warn("socket error: %s", exc)
                 logger.warn("Continuing without sending anything")
                 self.sock = None
         else:
             self.sock = None
-        self.session_id = 0
-        self.enip_connid = 0
-        self.sequence = 1
+            self.session_id = 0
+            self.enip_connid = 0
+            self.sequence = 1
 
         # Open an Ethernet/IP session
         sessionpkt = ENIP_TCP() / ENIP_RegisterSession()
         if self.sock is not None:
-            self.sock.send(str(sessionpkt))
+            self.sock.send(bytes(sessionpkt))  # Changed here
             reply_pkt = self.recv_enippkt()
             self.session_id = reply_pkt.session
+
+
+
+
+    def send_cip_udp(self, udp_pkt):
+        self.udp_socket.send(bytes(udp_pkt))
 
     @property
     def connected(self):
@@ -74,7 +84,7 @@ class PLCClient(object):
             ENIP_SendUnitData_Item() / cippkt
         ])
         if self.sock is not None:
-            self.sock.send(str(enippkt))
+            self.sock.send(bytes(enippkt))  # Changed here
 
     def send_rr_cm_cip(self, cippkt):
         """Encapsulate the CIP packet into a ConnectionManager packet"""
@@ -99,8 +109,9 @@ class PLCClient(object):
         ])
         self.sequence += 1
         if self.sock is not None:
-            self.sock.send(str(enippkt))
+            self.sock.send(bytes(enippkt))
 
+    # When receiving data, ensure you're working with bytes
     def recv_enippkt(self):
         """Receive an ENIP packet from the TCP socket"""
         if self.sock is None:
@@ -141,9 +152,6 @@ class PLCClient(object):
 
     def get_attribute(self, class_id, instance, attr):
         """Get an attribute for the specified class/instance/attr path"""
-        # Get_Attribute_Single does not seem to work properly
-        # path = CIP_Path.make(class_id=class_id, instance_id=instance, attribute_id=attr)
-        # cippkt = CIP(service=0x0e, path=path)  # Get_Attribute_Single
         path = CIP_Path.make(class_id=class_id, instance_id=instance)
         cippkt = CIP(path=path) / CIP_ReqGetAttributeList(attrs=[attr])
         self.send_rr_cm_cip(cippkt)
@@ -154,7 +162,7 @@ class PLCClient(object):
         if cippkt.status[0].status != 0:
             logger.error("CIP get attribute error: %r", cippkt.status[0])
             return
-        resp_getattrlist = str(cippkt.payload)
+        resp_getattrlist = bytes(cippkt.payload)  # Changed here
         assert resp_getattrlist[:2] == b'\x01\x00'  # Attribute count must be 1
         assert struct.unpack('<H', resp_getattrlist[2:4])[0] == attr  # First attribute
         assert resp_getattrlist[4:6] == b'\x00\x00'  # Status
@@ -245,8 +253,8 @@ class PLCClient(object):
         elif len(attrval) == 4:
             # 4-byte integer
             return hex(struct.unpack('<I', attrval)[0])
-        elif all(x == b'\0' for x in attrval):
+        elif all(x == 0 for x in attrval):
             # a series of zeros
             return '[{} zeros]'.format(len(attrval))
         # format in hexadecimal the content of attrval
-        return ''.join('{:2x}'.format(ord(x)) for x in attrval)
+        return ''.join('{:02x}'.format(b) for b in attrval)  # Changed here
