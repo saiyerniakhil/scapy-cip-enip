@@ -156,26 +156,26 @@ class CIP_PathField(scapy_all.StrLenField):
     @classmethod
     def to_tuplelist(cls, val):
         """Return a list of tuples describing the content of the path encoded in val"""
-        if ord(val[0]) == 0x91:
+        if val[0] == 0x91:
             # "ANSI Extended Symbolic", the path is a string
             # Don't check the second byte, which is the length (in bytes) of the strings.
-            return {-1: val[2:].rstrip("\0")}
+            return {-1: val[2:].rstrip(b"\0")}
 
         pos = 0
         result = []
         while pos < len(val):
-            header = struct.unpack('B', val[pos])[0]
+            header = val[pos]
             pos += 1
             if (header & 0xe0) != 0x20:  # 001 high bits is "Logical Segment"
                 sys.stderr.write("WARN: unknown segment class of 0x{:02x}\n".format(header))
 
             seg_format = header & 3
             if seg_format == 0:  # 8-bit segment
-                seg_value = struct.unpack('B', val[pos])[0]
+                seg_value = val[pos]
                 pos += 1
             elif seg_format == 1:  # 16-bit segment
-                seg_value = struct.unpack('<H', val[pos + 1:pos + 3])[0]
-                pos += 3
+                seg_value = struct.unpack('<H', val[pos:pos + 2])[0]
+                pos += 2
             else:
                 # 2 is 32-bit segment, but alignment needs to be taken into account
                 raise Exception("Unknown seg_format {}".format(seg_format))
@@ -183,27 +183,6 @@ class CIP_PathField(scapy_all.StrLenField):
             seg_type = (header >> 2) & 7
             result.append((seg_type, seg_value))
         return result
-
-    @classmethod
-    def tuplelist2repr(cls, val_tuplelist):
-        """Represent a path tuplelist into a human-readable text"""
-        if -1 in val_tuplelist and list(val_tuplelist.keys()) == [-1]:
-            # String path
-            return repr(val_tuplelist[-1])
-
-        descriptions = []
-        for type_id, value in val_tuplelist:
-            desc = cls.SEGMENT_TYPES.get(type_id, "type{}".format(type_id))
-            desc += " 0x{:x}".format(value)
-            if type_id == 0 and value in cls.KNOWN_CLASSES:
-                desc += "({})".format(cls.KNOWN_CLASSES[value])
-            descriptions.append(desc)
-        return ",".join(descriptions)
-
-    @classmethod
-    def i2repr(cls, pkt, val):
-        """Decode the path "val" as human-readable text"""
-        return cls.tuplelist2repr(cls.to_tuplelist(val))
 
 
 class CIP_Path(scapy_all.Packet):
@@ -379,14 +358,12 @@ class CIP(scapy_all.Packet):
     def post_build(self, p, pay):
         is_response = (self.direction == 1)
         if self.direction is None and not self.path:
-            # Transform the packet into a response
-            p = "\x01" + p[1:]
+            p = b"\x01" + p[1:]  # Use byte literal
             is_response = True
 
         if is_response:
-            # Add a success status field if there was none
             if not self.status:
-                p = p[0:1] + b"\0\0\0" + p[1:]
+                p = p[0:1] + b"\0\0\0" + p[1:]  # Ensure bytes
         return p + pay
 
 
@@ -451,6 +428,18 @@ class CIP_ConnectionParam(scapy_all.Packet):
     def extract_padding(self, s):
         return '', s
 
+def compute_connection_param(owner=0, connection_type=2, priority=0,
+                             connection_size_type=0, connection_size=500):
+    value = (
+        ((owner & 0x1) << 15) |
+        ((connection_type & 0x3) << 13) |
+        ((0 & 0x1) << 12) |  # Reserved bit
+        ((priority & 0x3) << 10) |
+        ((connection_size_type & 0x1) << 9) |
+        (connection_size & 0x1FF)
+    )
+    return value
+
 
 class CIP_ReqForwardOpen(scapy_all.Packet):
     """Forward Open request"""
@@ -467,14 +456,25 @@ class CIP_ReqForwardOpen(scapy_all.Packet):
         scapy_all.ByteField("connection_timeout_multiplier", 0),
         scapy_all.X3BytesField("reserved", 0),
         scapy_all.LEIntField("OT_rpi", 0x007a1200),  # 8000 ms
-        scapy_all.PacketField('OT_connection_param', CIP_ConnectionParam(), CIP_ConnectionParam),
+        scapy_all.LEShortField("OT_connection_param", None),
         scapy_all.LEIntField("TO_rpi", 0x007a1200),
-        scapy_all.PacketField('TO_connection_param', CIP_ConnectionParam(), CIP_ConnectionParam),
+        scapy_all.LEShortField("TO_connection_param", None),
         scapy_all.XByteField("transport_type", 0xa3),  # direction server, application object, class 3
         scapy_all.ByteField("path_wordsize", None),
         CIP_PathField("path", None, length_from=lambda p: 2 * p.path_wordsize),
     ]
 
+    def pre_dissect(self, s):
+        return s
+
+    def post_build(self, p, pay):
+        if self.OT_connection_param is None:
+            self.OT_connection_param = compute_connection_param()
+            p = p[:32] + struct.pack('<H', self.OT_connection_param) + p[34:]
+        if self.TO_connection_param is None:
+            self.TO_connection_param = compute_connection_param()
+            p = p[:38] + struct.pack('<H', self.TO_connection_param) + p[40:]
+        return p + pay
 
 class CIP_RespForwardOpen(scapy_all.Packet):
     """Forward Open response"""
@@ -521,14 +521,14 @@ class CIP_MultipleServicePacket(scapy_all.Packet):
     def do_build(self):
         """Build the packet by concatenating packets and building the offsets list"""
         # Build the sub packets
-        subpkts = [str(pkt) for pkt in self.packets]
+        subpkts = [bytes(pkt) for pkt in self.packets]  # Use bytes(pkt)
         # Build the offset lists
         current_offset = 2 + 2 * len(subpkts)
         offsets = []
         for p in subpkts:
             offsets.append(struct.pack("<H", current_offset))
             current_offset += len(p)
-        return struct.pack("<H", len(subpkts)) + "".join(offsets) + "".join(subpkts)
+        return struct.pack("<H", len(subpkts)) + b"".join(offsets) + b"".join(subpkts)
 
 
 class CIP_ReqConnectionManager(scapy_all.Packet):
