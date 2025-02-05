@@ -195,7 +195,7 @@ class PLCClient(object):
             resppkt = self.recv_enippkt()
 
             # Decode a list of 32-bit integers
-            data = str(resppkt[CIP].payload)
+            data = bytes(resppkt[CIP].payload)
             for i in range(0, len(data), 4):
                 inst_list.append(struct.unpack('<I', data[i:i + 4])[0])
 
@@ -224,7 +224,7 @@ class PLCClient(object):
             resppkt = self.recv_enippkt()
 
             cipstatus = resppkt[CIP].status[0].status
-            received_data = str(resppkt[CIP].payload)
+            received_data = bytes(resppkt[CIP].payload)
             if cipstatus == 0:
                 # Success
                 assert len(received_data) == remaining_size
